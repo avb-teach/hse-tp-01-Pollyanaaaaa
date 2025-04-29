@@ -1,4 +1,4 @@
-#!/bin/bash
+##!/bin/bash
 set -euo pipefail
 
 show_help() {
@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
                 show_help
             fi
             if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-                echo "Ошибка: значение --max_depth должно быть положительным целым числом" >&2
+                echo "Ошиgitка: значение --max_depth должно быть положительным целым числом" >&2
                 exit 1
             fi
             max_depth="$2"
