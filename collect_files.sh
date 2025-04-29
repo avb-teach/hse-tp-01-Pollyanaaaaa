@@ -1,4 +1,4 @@
-##!/bin/bash
+#!/bin/bash
 set -euo pipefail
 
 show_help() {
@@ -20,67 +20,73 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --max_depth)
             if [[ $# -lt 2 ]]; then
-                echo "Ошибка: после --max_depth нужно указать число" >&2
+                echo "Ошибка: не указано значение для --max_depth" >&2
                 show_help
             fi
             if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-                echo "Ошиgitка: значение --max_depth должно быть положительным целым числом" >&2
+                echo "Ошибка: значение --max_depth должно быть целым числом" >&2
                 exit 1
             fi
             max_depth="$2"
             shift 2
             ;;
         *)
-            echo "Ошибка: неизвестный параметр '$1'" >&2
+            echo "Неизвестный параметр: $1" >&2
             show_help
             ;;
     esac
 done
 
 if [[ "$output_dir" == "$input_dir"* ]]; then
-    echo "Ошибка: выходная директория не должна находиться внутри входной" >&2
+    echo "Ошибка: выходная директория не может находиться внутри входной" >&2
     exit 1
 fi
 
 mkdir -p "$output_dir"
+
 declare -A name_counts
 
 process_file() {
-    local src="$1"
-    local base=$(basename -- "$src")
-    local count=${name_counts["$base"]:-0}
-
-    if [[ "$base" =~ ^(.+)\.([^.]+)$ ]]; then
-        name="${BASH_REMATCH[1]}"
-        ext="${BASH_REMATCH[2]}"
+    local src_file=$1
+    local base_name=$(basename -- "$src_file")
+    local count=${name_counts["$base_name"]:-0}
+    
+    if [[ "$base_name" =~ ^(.+)\.([^.]+)$ ]]; then
+        local name=${BASH_REMATCH[1]}
+        local ext=${BASH_REMATCH[2]}
     else
-        name="$base"
-        ext=""
+        local name=$base_name
+        local ext=""
     fi
 
     if (( count == 0 )); then
-        newname="$base"
+        local new_name="$base_name"
     else
         if [[ -n "$ext" ]]; then
-            newname="${name}_${count}.${ext}"
+            local new_name="${name}_${count}.${ext}"
         else
-            newname="${base}_${count}"
+            local new_name="${base_name}_${count}"
         fi
     fi
 
-    name_counts["$base"]=$((count + 1))
-    cp -p -- "$src" "$output_dir/$newname"
+    name_counts["$base_name"]=$((count + 1))
+    cp -p -- "$src_file" "$output_dir/$new_name"
 }
 
-while IFS= read -r -d '' file; do
+export -f process_file
+export output_dir
+declare -x name_counts
+
+find "$input_dir" -type f -print0 | while IFS= read -r -d '' file; do
     if [[ -n "$max_depth" ]]; then
-        rel=${file#$input_dir/}
-        depth=$(tr -cd '/' <<< "$rel" | wc -c)
+        rel_path=${file#$input_dir/}
+        depth=$(tr -cd '/' <<< "$rel_path" | wc -c)
         ((depth++))
+        
         if (( depth > max_depth )); then
             continue
         fi
     fi
+    
     process_file "$file"
-done < <(find "$input_dir" -type f -print0)
-
+done
