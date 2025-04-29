@@ -18,25 +18,23 @@ process_file() {
     local src_file="$1"
     local rel_path="${src_file#$input_dir/}"
 
-    local dest_dir="$output_dir"
-    local file_name=$(basename "$rel_path")
-
     if [[ -n "$max_depth" ]]; then
-        depth=$(tr -cd '/' <<< "$rel_path" | wc -c)
-        ((depth++))
-        if (( depth > max_depth )); then
+        IFS='/' read -ra parts <<< "$rel_path"
+        if (( ${#parts[@]} > max_depth )); then
             return
         fi
-        IFS='/' read -ra parts <<< "$rel_path"
-        truncated_path=""
-        for ((i=0; i<depth-1; i++)); do
-            truncated_path+="${parts[i]}/"
-        done
+        truncated_path="${parts[*]:0:${#parts[@]}-1}"
+        truncated_path="${truncated_path// /\/}"
         dest_dir="$output_dir/$truncated_path"
-        mkdir -p "$dest_dir"
+    else
+        dest_dir="$output_dir"
     fi
 
+    mkdir -p "$dest_dir"
+
+    local file_name=$(basename "$rel_path")
     local count=${name_counts["$file_name"]:-0}
+
     if [[ "$file_name" =~ ^(.+)\.([^.]+)$ ]]; then
         local name="${BASH_REMATCH[1]}"
         local ext="${BASH_REMATCH[2]}"
