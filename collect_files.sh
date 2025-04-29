@@ -83,3 +83,4 @@ while IFS= read -r -d '' file; do
     fi
     process_file "$file"
 done < <(find "$input_dir" -type f -print0)
+
