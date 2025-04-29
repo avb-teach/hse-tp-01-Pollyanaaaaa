@@ -1,57 +1,82 @@
 #!/bin/bash
+set -euo pipefail
 
-input_dir=$(realpath "$1")
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 input_dir output_dir [--max_depth N]"
+    exit 1
+fi
+
+input_dir=$(realpath -e "$1")
 output_dir=$(realpath -m "$2")
 shift 2
 
 max_depth=""
-if [[ "$1" == "--max_depth" ]]; then
-    max_depth="$2"
-    shift 2
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --max_depth)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --max_depth requires a value"
+                exit 1
+            fi
+            if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "Error: --max_depth must be an integer"
+                exit 1
+            fi
+            max_depth="$2"
+            shift 2
+            ;;
+        *)
+            echo "Error: Unknown parameter: $1"
+            exit 1
+            ;;
+    esac
+done
 
 mkdir -p "$output_dir"
 
-declare -A name_counts
+if [[ -n "$max_depth" ]]; then
+    mapfile -d '' files < <(find "$input_dir" -mindepth 1 -maxdepth "$max_depth" -type f -print0)
+    for file in "${files[@]}"; do
+        rel_path="${file#$input_dir/}"
+        dest="$output_dir/$rel_path"
+        mkdir -p "$(dirname "$dest")"
+        cp -p "$file" "$dest"
+    done
+else
+    declare -A name_counts
 
-process_file() {
-    local src_file="$1"
-    local rel_path="${src_file#$input_dir/}"
+    process_file() {
+        local src_file=$1
+        local base_name
+        base_name=$(basename -- "$src_file")
+        local count=${name_counts["$base_name"]:-0}
 
-    if [[ -n "$max_depth" ]]; then
-        IFS='/' read -ra parts <<< "$rel_path"
-        if (( ${#parts[@]} > max_depth )); then
-            return
+        if [[ "$base_name" =~ ^(.+)\.([^.]+)$ ]]; then
+            local name=${BASH_REMATCH[1]}
+            local ext=${BASH_REMATCH[2]}
+        else
+            local name=$base_name
+            local ext=""
         fi
-        truncated_path="${parts[*]:0:${#parts[@]}-1}"
-        truncated_path="${truncated_path// /\/}"
-        dest_dir="$output_dir/$truncated_path"
-    else
-        dest_dir="$output_dir"
-    fi
 
-    mkdir -p "$dest_dir"
+        local new_name
+        if (( count == 0 )); then
+            new_name="$base_name"
+        else
+            if [[ -n "$ext" ]]; then
+                new_name="${name}_${count}.${ext}"
+            else
+                new_name="${base_name}_${count}"
+            fi
+        fi
 
-    local file_name=$(basename "$rel_path")
-    local count=${name_counts["$file_name"]:-0}
+        name_counts["$base_name"]=$((count + 1))
+        cp -p -- "$src_file" "$output_dir/$new_name"
+    }
 
-    if [[ "$file_name" =~ ^(.+)\.([^.]+)$ ]]; then
-        local name="${BASH_REMATCH[1]}"
-        local ext="${BASH_REMATCH[2]}"
-        local new_name="$name"
-        [[ $count -gt 0 ]] && new_name+="_$count"
-        new_name+=".$ext"
-    else
-        local new_name="$file_name"
-        [[ $count -gt 0 ]] && new_name+="_$count"
-    fi
-
-    name_counts["$file_name"]=$((count + 1))
-    cp -p "$src_file" "$dest_dir/$new_name"
-}
-
-mapfile -d '' files < <(find "$input_dir" -type f -print0)
-
-for file in "${files[@]}"; do
-    process_file "$file"
-done
+    export -f process_file
+    export output_dir
+    find "$input_dir" -type f -print0 | while IFS= read -r -d '' file; do
+        process_file "$file"
+    done
+fi
