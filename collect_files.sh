@@ -21,59 +21,52 @@ mkdir -p "$output_dir"
 declare -A name_counts
 
 process_file() {
-    local src_file="$1"
-    local rel_path="${src_file#$input_dir/}"
-    local base_name=$(basename "$rel_path")
-    local rel_dir=$(dirname "$rel_path")
+    local src="$1"
+    local rel="${src#$input_dir/}"
+    local name=$(basename "$rel")
+    local path=$(dirname "$rel")
 
-    IFS='/' read -ra parts <<< "$rel_dir"
-    local total_depth=${#parts[@]}
+    IFS='/' read -ra parts <<< "$path"
+    local depth=${#parts[@]}
 
     if [[ -n "$max_depth" ]]; then
-        local max_path_depth=$((max_depth - 1))
-        if (( total_depth > max_path_depth )); then
-            parts=("${parts[@]:total_depth - max_path_depth}")
+        max_path_depth=$((max_depth - 1))
+        if (( depth > max_path_depth )); then
+            parts=("${parts[@]:depth - max_path_depth}")
         fi
     fi
 
-    local new_path="${parts[*]}"
-    new_path="${new_path// /\/}"
+    local dest_path="${parts[*]}"
+    dest_path="${dest_path// /\/}"
     local dest_dir="$output_dir"
-    if [[ -n "$new_path" && "$new_path" != "." ]]; then
-        dest_dir="$output_dir/$new_path"
-    fi
+    [[ -n "$dest_path" && "$dest_path" != "." ]] && dest_dir="$output_dir/$dest_path"
 
     mkdir -p "$dest_dir"
 
-    local global_key="$base_name"
-    local count=${name_counts["$global_key"]:-0}
+    local key="$name"
+    local count=${name_counts["$key"]:-0}
 
-    if [[ "$base_name" =~ ^(.+)\.([^.]+)$ ]]; then
-        local name="${BASH_REMATCH[1]}"
+    if [[ "$name" =~ ^(.+)\.([^.]+)$ ]]; then
+        local n="${BASH_REMATCH[1]}"
         local ext="${BASH_REMATCH[2]}"
     else
-        local name="$base_name"
+        local n="$name"
         local ext=""
     fi
 
     local new_name
     if (( count == 0 )); then
-        new_name="$base_name"
+        new_name="$name"
     else
-        if [[ -n "$ext" ]]; then
-            new_name="${name}${count}.${ext}"
-        else
-            new_name="${name}${count}"
-        fi
+        new_name="${n}${count}${ext:+.$ext}"
     fi
 
-    name_counts["$global_key"]=$((count + 1))
-
-    cp -p "$src_file" "$dest_dir/$new_name"
+    name_counts["$key"]=$((count + 1))
+    cp -p "$src" "$dest_dir/$new_name"
 }
 
 mapfile -d '' files < <(find "$input_dir" -type f -print0)
 
-for file in "${files[@]}"; do
-    process_file "$file"
+for f in "${files[@]}"; do
+    process_file "$f"
 done
