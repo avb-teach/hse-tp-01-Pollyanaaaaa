@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 input_dir output_dir [--max_depth N]"
+    exit 1
+fi
+
 input_dir=$(realpath -e "$1")
 output_dir=$(realpath -m "$2")
 shift 2
@@ -18,49 +23,57 @@ declare -A name_counts
 process_file() {
     local src_file="$1"
     local rel_path="${src_file#$input_dir/}"
-    IFS='/' read -ra parts <<< "$rel_path"
-    local depth=${#parts[@]}
-    local base_name="${parts[-1]}"
-    local dest_path_parts=()
+    local base_name=$(basename "$rel_path")
+    local rel_dir=$(dirname "$rel_path")
 
-    if [[ -n "$max_depth" && "$depth" -gt "$max_depth" ]]; then
-        dest_path_parts=("${parts[@]:0:max_depth-1}")
-        dest_path_parts+=("${parts[@]:max_depth-1:depth - max_depth}")
-    else
-        dest_path_parts=("${parts[@]:0:depth - 1}")
-    fi
+    IFS='/' read -ra parts <<< "$rel_dir"
+    local total_depth=${#parts[@]}
 
-    local dest_dir="$output_dir"
-    for part in "${dest_path_parts[@]}"; do
-        dest_dir="$dest_dir/$part"
-    done
-
-    mkdir -p "$dest_dir"
-
-    local count=${name_counts["$base_name"]:-0}
-    local name="${base_name%.*}"
-    local ext="${base_name##*.}"
-    local new_name="$base_name"
-
-    if (( count > 0 )); then
-        if [[ "$base_name" == *.* ]]; then
-            new_name="${name}${count}.${ext}"
-        else
-            new_name="${base_name}${count}"
+    if [[ -n "$max_depth" ]]; then
+        local max_path_depth=$((max_depth - 1))
+        if (( total_depth > max_path_depth )); then
+            parts=("${parts[@]:total_depth - max_path_depth}")
         fi
     fi
 
-    name_counts["$base_name"]=$((count + 1))
+    local new_path="${parts[*]}"
+    new_path="${new_path// /\/}"
+    local dest_dir="$output_dir"
+    if [[ -n "$new_path" && "$new_path" != "." ]]; then
+        dest_dir="$output_dir/$new_path"
+    fi
+
+    mkdir -p "$dest_dir"
+
+    local global_key="$base_name"
+    local count=${name_counts["$global_key"]:-0}
+
+    if [[ "$base_name" =~ ^(.+)\.([^.]+)$ ]]; then
+        local name="${BASH_REMATCH[1]}"
+        local ext="${BASH_REMATCH[2]}"
+    else
+        local name="$base_name"
+        local ext=""
+    fi
+
+    local new_name
+    if (( count == 0 )); then
+        new_name="$base_name"
+    else
+        if [[ -n "$ext" ]]; then
+            new_name="${name}${count}.${ext}"
+        else
+            new_name="${name}${count}"
+        fi
+    fi
+
+    name_counts["$global_key"]=$((count + 1))
 
     cp -p "$src_file" "$dest_dir/$new_name"
 }
 
-export -f process_file
-export input_dir
-export output_dir
-export max_depth
-export -A name_counts
+mapfile -d '' files < <(find "$input_dir" -type f -print0)
 
-find "$input_dir" -type f -print0 | while IFS= read -r -d '' file; do
+for file in "${files[@]}"; do
     process_file "$file"
 done
